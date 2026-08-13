@@ -1,0 +1,106 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function temporaryFullUserAccess() { return true; }
+    function admin() {
+      return signedIn() && (temporaryFullUserAccess() || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+    }
+    function ownsTeam(teamId) {
+      return signedIn() && get(/databases/$(database)/documents/teams/$(teamId)).data.createdBy == request.auth.uid;
+    }
+    function validPlayer() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['name','role','jerseyNo','createdBy'])
+        && d.name is string && d.name.size() > 0 && d.name.size() <= 120
+        && d.role in ['batter','bowler','allrounder','keeper']
+        && d.jerseyNo is int && d.jerseyNo >= 0 && d.jerseyNo <= 999;
+    }
+    function ownsTournament(id) {
+      return signedIn() && get(/databases/$(database)/documents/tournaments/$(id)).data.createdBy == request.auth.uid;
+    }
+    function validTournamentCreation() {
+      let d = request.resource.data;
+      return signedIn() && d.createdBy == request.auth.uid
+        && d.keys().hasOnly(['name','location','startDate','endDate','format','status','createdBy','teamIds'])
+        && d.name is string && d.name.size() > 0 && d.name.size() <= 120
+        && d.location is string && d.location.size() > 0 && d.location.size() <= 200
+        && d.format is string && d.format.size() > 0 && d.format.size() <= 30
+        && d.startDate is timestamp && d.endDate is timestamp && d.endDate >= d.startDate
+        && d.status == 'upcoming'
+        && d.get('teamIds',[]) is list && d.get('teamIds',[]).size() <= 64
+        && d.get('teamIds',[]).toSet().size() == d.get('teamIds',[]).size();
+    }
+    function validTeamCreation() {
+      let d = request.resource.data;
+      return signedIn() && d.createdBy == request.auth.uid
+        && d.keys().hasOnly(['name','shortName','logoUrl','tournamentIds','createdBy'])
+        && d.name is string && d.name.size() > 0 && d.name.size() <= 120
+        && d.shortName is string && d.shortName.size() > 0 && d.shortName.size() <= 12
+        && d.logoUrl is string && d.logoUrl.size() <= 2048
+        && d.tournamentIds is list && d.tournamentIds.size() <= 1
+        && (d.tournamentIds.size() == 0 || ownsTournament(d.tournamentIds[0]));
+    }
+    function participatingTeam(teamId, tournamentId) {
+      let team = get(/databases/$(database)/documents/teams/$(teamId)).data;
+      let tournament = get(/databases/$(database)/documents/tournaments/$(tournamentId)).data;
+      return tournamentId in team.tournamentIds || teamId in tournament.get('teamIds',[]);
+    }
+    function validFixtureCreation() {
+      let d = request.resource.data;
+      let a = get(/databases/$(database)/documents/teams/$(d.teamAId)).data;
+      let b = get(/databases/$(database)/documents/teams/$(d.teamBId)).data;
+      return signedIn() && d.createdBy == request.auth.uid && ownsTournament(d.tournamentId)
+        && d.keys().hasOnly(['tournamentId','teamAId','teamBId','teamAName','teamBName','teamAShort','teamBShort',
+          'venue','scheduledAt','overs','toss','createdBy','status','innings','currentInnings','revision'])
+        && d.teamAId != d.teamBId
+        && participatingTeam(d.teamAId,d.tournamentId) && participatingTeam(d.teamBId,d.tournamentId)
+        && d.teamAName == a.name && d.teamBName == b.name && d.teamAShort == a.shortName && d.teamBShort == b.shortName
+        && d.venue is string && d.venue.size() > 0 && d.venue.size() <= 200
+        && d.scheduledAt is timestamp && d.overs is int && d.overs >= 1 && d.overs <= 50
+        && d.status == 'upcoming' && d.innings == [] && d.currentInnings == 0 && d.revision == 0
+        && d.toss is map && (d.toss.size() == 0 ||
+          (d.toss.keys().hasOnly(['winnerTeamId','decision']) &&
+           d.toss.winnerTeamId in [d.teamAId,d.teamBId] && d.toss.decision in ['bat','bowl']));
+    }
+    match /users/{uid} {
+      allow get: if signedIn() && (request.auth.uid == uid || admin());
+      allow list: if admin();
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['name', 'email', 'role', 'createdAt'])
+        && request.resource.data.role == 'user'
+        && request.resource.data.name is string
+        && request.resource.data.email == request.auth.token.email;
+      allow update: if admin() || (signedIn() && request.auth.uid == uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name']));
+      allow delete: if admin() && request.auth.uid != uid;
+    }
+    match /tournaments/{id} {
+      allow read: if true;
+      allow create: if admin() || validTournamentCreation();
+      allow update, delete: if admin();
+    }
+    match /teams/{id} {
+      allow read: if true;
+      allow create: if admin() || validTeamCreation();
+      allow update, delete: if admin();
+      match /players/{playerId} {
+        allow read: if true;
+        allow create: if admin() || (ownsTeam(id) && validPlayer()
+          && request.resource.data.createdBy == request.auth.uid);
+        allow update: if admin() || (ownsTeam(id) && validPlayer()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','role','jerseyNo']));
+        allow delete: if admin();
+      }
+    }
+    match /matches/{id} {
+      allow read: if true;
+      allow create: if admin() || validFixtureCreation();
+      allow update, delete: if admin();
+      match /balls/{ballId} {
+        allow read: if true;
+        allow write: if admin();
+      }
+    }
+  }
+}

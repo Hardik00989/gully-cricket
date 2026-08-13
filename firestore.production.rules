@@ -1,0 +1,326 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isScorer() {
+      return request.auth != null &&
+        (exists(/databases/$(database)/documents/scorers/$(request.auth.uid)) ||
+          isAdmin());
+    }
+    function isAdmin() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+    function parentPath(id) {
+      return /databases/$(database)/documents/matches/$(id);
+    }
+    function validTeam(t) {
+      return t is map && t.keys().hasOnly(['id', 'name', 'players']) &&
+        t.id is string && t.id.size() > 0 && t.id.size() <= 100 &&
+        t.name is string && t.name.size() > 0 && t.name.size() <= 80 &&
+        t.players is list && t.players.size() == 11 &&
+        t.players.toSet().size() == 11;
+    }
+    function validInnings(i, d) {
+      let batting = i.battingTeam == d.teamA.id ? d.teamA : d.teamB;
+      let bowling = i.battingTeam == d.teamA.id ? d.teamB : d.teamA;
+      return i.keys().hasOnly(['battingTeam', 'strikerId', 'nonStrikerId',
+          'bowlerId', 'runs', 'wickets', 'legalBalls', 'extras',
+          'needsBowler', 'freeHit']) &&
+        i.battingTeam in [d.teamA.id, d.teamB.id] &&
+        i.runs is int && i.runs >= 0 && i.runs <= 9999 &&
+        i.wickets is int && i.wickets >= 0 && i.wickets <= 10 &&
+        i.legalBalls is int && i.legalBalls >= 0 &&
+        i.legalBalls <= d.oversPerInnings * 6 &&
+        i.extras is int && i.extras >= 0 && i.extras <= i.runs &&
+        i.strikerId in batting.players &&
+        i.nonStrikerId in batting.players && i.strikerId != i.nonStrikerId &&
+        i.bowlerId in bowling.players &&
+        i.needsBowler is bool && i.freeHit is bool;
+    }
+    function validMatch(d, id) {
+      return d.keys().hasOnly(['id', 'title', 'venue', 'teamA', 'teamB',
+          'startTime', 'oversPerInnings', 'tossWinner', 'tossDecision',
+          'state', 'result', 'currentInnings', 'revision', 'innings', 'balls']) &&
+        d.id == id && d.title is string && d.title.size() > 0 &&
+        d.title.size() <= 120 && d.venue is string &&
+        d.venue.size() > 0 && d.venue.size() <= 120 &&
+        validTeam(d.teamA) && validTeam(d.teamB) && d.teamA.id != d.teamB.id &&
+        d.startTime is int && d.oversPerInnings is int &&
+        d.oversPerInnings >= 1 && d.oversPerInnings <= 20 &&
+        d.tossWinner in [d.teamA.id, d.teamB.id] &&
+        d.tossDecision in ['bat', 'bowl'] &&
+        d.state in ['upcoming', 'live', 'finished'] &&
+        d.result is string && d.result.size() <= 200 &&
+        d.revision is int && d.revision >= 0 &&
+        d.innings is list && d.innings.size() <= 2 &&
+        d.currentInnings == d.innings.size() && d.balls is list &&
+        d.balls.size() <= 1000 &&
+        (d.innings.size() < 1 || validInnings(d.innings[0], d)) &&
+        (d.innings.size() < 2 || validInnings(d.innings[1], d)) &&
+        (d.state != 'upcoming' || d.innings.size() == 0) &&
+        (d.state != 'live' || d.innings.size() > 0) &&
+        (d.state != 'finished' ||
+          (d.innings.size() == 2 && d.result.size() > 0));
+    }
+    function syncedInnings(d, id) {
+      return (d.innings.size() < 1 || getAfter(
+          /databases/$(database)/documents/matches/$(id)/innings/1
+        ).data == d.innings[0]) &&
+        (d.innings.size() < 2 || getAfter(
+          /databases/$(database)/documents/matches/$(id)/innings/2
+        ).data == d.innings[1]);
+    }
+    function setupChange(d, old) {
+      let n = d.innings.size();
+      return d.balls == old.balls && d.result == '' && d.state == 'live' && (
+        (n == old.innings.size() + 1 &&
+          (old.innings.size() == 0 ||
+            (old.innings[0].legalBalls == d.oversPerInnings * 6 ||
+             old.innings[0].wickets == 10)) &&
+          (n == 1 || d.innings[0] == old.innings[0]) &&
+          d.innings[n - 1].runs == 0 && d.innings[n - 1].wickets == 0 &&
+          d.innings[n - 1].legalBalls == 0 && d.innings[n - 1].extras == 0) ||
+        (n > 0 && n == old.innings.size() && old.state == 'live' &&
+          (n == 1 || d.innings[0] == old.innings[0]) &&
+          old.innings[n - 1].needsBowler == true &&
+          d.innings[n - 1].needsBowler == false &&
+          d.innings[n - 1].bowlerId != old.innings[n - 1].bowlerId &&
+          d.innings[n - 1].diff(old.innings[n - 1]).affectedKeys()
+            .hasOnly(['bowlerId', 'needsBowler'])));
+    }
+    function ballChange(d, old, id) {
+      let n = d.innings.size();
+      let previous = old.innings[n - 1];
+      let current = d.innings[n - 1];
+      let b = d.balls[d.balls.size() - 1];
+      let record = getAfter(
+        /databases/$(database)/documents/matches/$(id)/balls/$(b.id)).data;
+      return old.state == 'live' &&
+        d.innings.size() == old.innings.size() &&
+        d.balls.size() == old.balls.size() + 1 &&
+        d.balls.removeAll([b]) == old.balls &&
+        record.id == b.id && record.revision == d.revision &&
+        record.diff(b).affectedKeys().hasOnly(['before', 'revision', 'writtenAt']) &&
+        b.keys().hasOnly(['id', 'innings', 'over', 'ballInOver', 'batterId',
+          'bowlerId', 'runsOffBat', 'extraRuns', 'extraType', 'wicketType',
+          'nextBatter', 'createdAt', 'dismissedId', 'crossed']) &&
+        b.runsOffBat is int && b.runsOffBat >= 0 && b.runsOffBat <= 6 &&
+        b.extraRuns is int && b.extraRuns >= 0 && b.extraRuns <= 7 &&
+        b.extraType in ['none', 'wide', 'noBall', 'bye', 'legBye'] &&
+        b.wicketType in [null, 'bowled', 'caught', 'lbw', 'stumped',
+          'runOut', 'hitWicket'] &&
+        b.innings == old.currentInnings && b.batterId == previous.strikerId &&
+        b.bowlerId == previous.bowlerId && !previous.needsBowler &&
+        previous.wickets < 10 &&
+        previous.legalBalls < d.oversPerInnings * 6 &&
+        b.over is int && b.ballInOver is int && b.ballInOver >= 1 &&
+        b.ballInOver <= 6 && b.over * 6 + b.ballInOver == previous.legalBalls + 1 &&
+        current.runs == previous.runs + b.runsOffBat + b.extraRuns &&
+        current.extras == previous.extras + b.extraRuns &&
+        current.wickets == previous.wickets + (b.wicketType == null ? 0 : 1) &&
+        current.legalBalls == previous.legalBalls +
+          (b.extraType in ['wide', 'noBall'] ? 0 : 1) &&
+        (d.innings.size() == 1 || d.innings[0] == old.innings[0]);
+    }
+    function undoChange(d, old, id) {
+      let last = old.balls[old.balls.size() - 1];
+      let path = /databases/$(database)/documents/matches/$(id)/balls/$(last.id);
+      let saved = get(path).data.before;
+      return d.balls.size() == old.balls.size() - 1 &&
+        old.balls.removeAll([last]) == d.balls && !existsAfter(path) &&
+        d.innings == saved.innings && d.state == saved.state &&
+        d.result == saved.result;
+    }
+    function validUpdate(d, old, id) {
+      let n = d.innings.size();
+      return d.revision == old.revision + 1 &&
+        d.diff(old).affectedKeys().hasOnly(['revision', 'state', 'result',
+          'currentInnings', 'innings', 'balls']) &&
+        n >= 1 && n <= 2 && d.currentInnings == n &&
+        d.balls is list && d.balls.size() <= 1000 &&
+        d.state in ['live', 'finished'] &&
+        d.result is string && d.result.size() <= 200 &&
+        (d.state == 'live' ? d.result == '' : n == 2 && d.result.size() > 0) &&
+        validInnings(d.innings[n - 1], d) && syncedInnings(d, id) &&
+        (setupChange(d, old) ||
+          (d.balls.size() == old.balls.size() + 1 && ballChange(d, old, id)) ||
+          (old.balls.size() > 0 && d.balls.size() == old.balls.size() - 1 &&
+            undoChange(d, old, id)));
+    }
+    function validInningsWrite(d, id, n) {
+      let next = getAfter(parentPath(id)).data;
+      return next.revision == get(parentPath(id)).data.revision + 1 &&
+        d == next.innings[int(n) - 1];
+    }
+    function validBallWrite(d, id, ballId) {
+      let next = getAfter(parentPath(id)).data;
+      let old = get(parentPath(id)).data;
+      return d.id == ballId && d.revision == next.revision &&
+        next.revision == old.revision + 1 &&
+        next.balls[next.balls.size() - 1].id == ballId &&
+        d.before.innings == old.innings;
+    }
+    match /matches/{id} {
+      allow read: if true;
+      allow create: if isAdmin() && validMatch(request.resource.data, id) &&
+        request.resource.data.revision == 0 &&
+        request.resource.data.state == 'upcoming' &&
+        request.resource.data.balls.size() == 0 &&
+        request.resource.data.innings.size() == 0;
+      allow update: if isScorer() && validUpdate(request.resource.data,
+        resource.data, id);
+      allow delete: if false;
+
+      match /innings/{n} {
+        allow read: if true;
+        allow create, update: if isScorer() && n in ['1', '2'] &&
+          validInningsWrite(request.resource.data, id, n);
+        allow delete: if isScorer() && n == '2' &&
+          getAfter(parentPath(id)).data.currentInnings == 1 &&
+          getAfter(parentPath(id)).data.revision ==
+            get(parentPath(id)).data.revision + 1;
+      }
+      match /balls/{ballId} {
+        allow read: if true;
+        allow create: if isScorer() &&
+          validBallWrite(request.resource.data, id, ballId);
+        allow update: if false;
+        allow delete: if isScorer() &&
+          get(parentPath(id)).data.balls[
+            get(parentPath(id)).data.balls.size() - 1].id == ballId &&
+          getAfter(parentPath(id)).data.balls.size() ==
+            get(parentPath(id)).data.balls.size() - 1 &&
+          getAfter(parentPath(id)).data.revision ==
+            get(parentPath(id)).data.revision + 1;
+      }
+    }
+    match /teams/{teamId} {
+      allow read: if true;
+      allow create, update: if isAdmin() &&
+        request.resource.data.keys().hasOnly(['id', 'name', 'players']) &&
+        request.resource.data.name is string &&
+        request.resource.data.name.size() > 0 &&
+        request.resource.data.name.size() <= 80 &&
+        request.resource.data.players is list &&
+        request.resource.data.players.size() >= 11 &&
+        request.resource.data.players.size() <= 30 &&
+        request.resource.data.players.toSet().size() ==
+          request.resource.data.players.size();
+      allow delete: if false;
+    }
+    // Scorer membership is provisioned only with the console or Admin SDK.
+    match /scorers/{uid} {
+      allow get: if request.auth != null && request.auth.uid == uid;
+      allow list: if false;
+      allow write: if false;
+    }
+    match /admins/{uid} {
+      allow get: if request.auth != null && request.auth.uid == uid;
+      allow list, write: if false;
+    }
+    // Keep this Flutter app separate from the existing project schema.
+    match /gullyCricket/main {
+      function signedIn() { return request.auth != null; }
+      function temporaryFullUserAccess() { return true; }
+      function admin() {
+        return signedIn() && (temporaryFullUserAccess() || get(/databases/$(database)/documents/gullyCricket/main/users/$(request.auth.uid)).data.role == 'admin');
+      }
+      function ownsTeam(teamId) {
+        return signedIn() && get(/databases/$(database)/documents/gullyCricket/main/teams/$(teamId)).data.createdBy == request.auth.uid;
+      }
+      function validPlayer() {
+        let d = request.resource.data;
+        return d.keys().hasOnly(['name','role','jerseyNo','createdBy'])
+          && d.name is string && d.name.size() > 0 && d.name.size() <= 120
+          && d.role in ['batter','bowler','allrounder','keeper']
+          && d.jerseyNo is int && d.jerseyNo >= 0 && d.jerseyNo <= 999;
+      }
+      function ownsTournament(id) {
+        return signedIn() && get(/databases/$(database)/documents/gullyCricket/main/tournaments/$(id)).data.createdBy == request.auth.uid;
+      }
+      function validTournamentCreation() {
+        let d = request.resource.data;
+        return signedIn() && d.createdBy == request.auth.uid
+          && d.keys().hasOnly(['name','location','startDate','endDate','format','status','createdBy','teamIds'])
+          && d.name is string && d.name.size() > 0 && d.name.size() <= 120
+          && d.location is string && d.location.size() > 0 && d.location.size() <= 200
+          && d.format is string && d.format.size() > 0 && d.format.size() <= 30
+          && d.startDate is timestamp && d.endDate is timestamp && d.endDate >= d.startDate
+          && d.status == 'upcoming'
+          && d.get('teamIds',[]) is list && d.get('teamIds',[]).size() <= 64
+          && d.get('teamIds',[]).toSet().size() == d.get('teamIds',[]).size();
+      }
+      function validTeamCreation() {
+        let d = request.resource.data;
+        return signedIn() && d.createdBy == request.auth.uid
+          && d.keys().hasOnly(['name','shortName','logoUrl','tournamentIds','createdBy'])
+          && d.name is string && d.name.size() > 0 && d.name.size() <= 120
+          && d.shortName is string && d.shortName.size() > 0 && d.shortName.size() <= 12
+          && d.logoUrl is string && d.logoUrl.size() <= 2048
+          && d.tournamentIds is list && d.tournamentIds.size() <= 1
+          && (d.tournamentIds.size() == 0 || ownsTournament(d.tournamentIds[0]));
+      }
+      function participatingTeam(teamId, tournamentId) {
+        let team = get(/databases/$(database)/documents/gullyCricket/main/teams/$(teamId)).data;
+        let tournament = get(/databases/$(database)/documents/gullyCricket/main/tournaments/$(tournamentId)).data;
+        return tournamentId in team.tournamentIds || teamId in tournament.get('teamIds',[]);
+      }
+      function validFixtureCreation() {
+        let d = request.resource.data;
+        let a = get(/databases/$(database)/documents/gullyCricket/main/teams/$(d.teamAId)).data;
+        let b = get(/databases/$(database)/documents/gullyCricket/main/teams/$(d.teamBId)).data;
+        return signedIn() && d.createdBy == request.auth.uid && ownsTournament(d.tournamentId)
+          && d.keys().hasOnly(['tournamentId','teamAId','teamBId','teamAName','teamBName','teamAShort','teamBShort',
+            'venue','scheduledAt','overs','toss','createdBy','status','innings','currentInnings','revision'])
+          && d.teamAId != d.teamBId
+          && participatingTeam(d.teamAId,d.tournamentId) && participatingTeam(d.teamBId,d.tournamentId)
+          && d.teamAName == a.name && d.teamBName == b.name && d.teamAShort == a.shortName && d.teamBShort == b.shortName
+          && d.venue is string && d.venue.size() > 0 && d.venue.size() <= 200
+          && d.scheduledAt is timestamp && d.overs is int && d.overs >= 1 && d.overs <= 50
+          && d.status == 'upcoming' && d.innings == [] && d.currentInnings == 0 && d.revision == 0
+          && d.toss is map && (d.toss.size() == 0 ||
+            (d.toss.keys().hasOnly(['winnerTeamId','decision']) &&
+             d.toss.winnerTeamId in [d.teamAId,d.teamBId] && d.toss.decision in ['bat','bowl']));
+      }
+      match /users/{uid} {
+        allow get: if signedIn() && (request.auth.uid == uid || admin());
+        allow list: if admin();
+        allow create: if signedIn() && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['name', 'email', 'role', 'createdAt'])
+          && request.resource.data.role == 'user'
+          && request.resource.data.name is string
+          && request.resource.data.email == request.auth.token.email;
+        allow update: if admin() || (signedIn() && request.auth.uid == uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name']));
+        allow delete: if admin() && request.auth.uid != uid;
+      }
+      match /tournaments/{id} {
+        allow read: if true;
+        allow create: if admin() || validTournamentCreation();
+        allow update, delete: if admin();
+      }
+      match /teams/{id} {
+        allow read: if true;
+        allow create: if admin() || validTeamCreation();
+        allow update, delete: if admin();
+        match /players/{playerId} {
+          allow read: if true;
+          allow create: if admin() || (ownsTeam(id) && validPlayer()
+            && request.resource.data.createdBy == request.auth.uid);
+          allow update: if admin() || (ownsTeam(id) && validPlayer()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','role','jerseyNo']));
+          allow delete: if admin();
+        }
+      }
+      match /matches/{id} {
+        allow read: if true;
+        allow create: if admin() || validFixtureCreation();
+        allow update, delete: if admin();
+        match /balls/{ballId} {
+          allow read: if true;
+          allow write: if admin();
+        }
+      }
+    }
+  }
+}
