@@ -1,0 +1,35 @@
+name: gully_crickett
+description: "Live scores and fixtures for local cricket tournaments."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.9
+
+  flutter_riverpod: ^3.4.3
+  firebase_core: ^5.1.0
+  firebase_auth: ^7.0.1
+  cloud_firestore: ^7.1.0
+  go_router: ^18.1.2
+  google_fonts: ^8.2.1
+  intl: ^0.20.2
+  cached_network_image: ^4.0.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^6.0.0
+
+flutter:
+
+  uses-material-design: true
+
+  assets:
+    - assets/fonts/
