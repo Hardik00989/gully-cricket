@@ -1,0 +1,19 @@
+{
+  "name": "Gully Cricket",
+  "short_name": "Gully Cricket",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#14402A",
+  "theme_color": "#14402A",
+  "description": "Live scores and fixtures from your local cricket ground.",
+  "orientation": "portrait-primary",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "cricket-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
