@@ -1,0 +1,58 @@
+import {chromium,expect} from '@playwright/test';
+import {mkdir} from 'node:fs/promises';
+const base=process.env.APP_URL ?? 'http://127.0.0.1:7357';
+if(!['127.0.0.1','localhost'].includes(new URL(base).hostname)) throw new Error('This smoke test uses local emulator credentials only.');
+await mkdir('.tools/screenshots',{recursive:true});
+const browser=await chromium.launch({channel:'chrome',headless:true});
+const errors=[];
+async function open(context,path) {
+  const page=await context.newPage();
+  page.on('pageerror',e=>errors.push(e.message));
+  await page.goto(`${base}/#${path}`);
+  await page.waitForSelector('flutter-view');
+  const enable=page.locator('flt-semantics-placeholder');
+  if(await enable.count()) await enable.evaluate(el=>el.click());
+  return page;
+}
+try {
+  const guestContext=await browser.newContext({viewport:{width:390,height:844}});
+  const adminContext=await browser.newContext({viewport:{width:390,height:844}});
+  const guest=await open(guestContext,'/matches/ground-live');
+  const guestScore=guest.getByText(/^\d+\/\d+$/);
+  await expect(guestScore).toBeVisible({timeout:30000});
+  const initialScore=await guestScore.textContent();
+  const [initialRuns,initialWickets]=initialScore.split('/').map(Number);
+  await expect(guest.getByRole('button',{name:/^(Start scoring|Continue scoring)$/})).toHaveCount(0);
+  const admin=await open(adminContext,'/login');
+  await admin.getByRole('textbox',{name:'Email',exact:true}).click();
+  await admin.keyboard.type('admin@gully.local',{delay:30});
+  await admin.getByRole('textbox',{name:'Password',exact:true}).click();
+  await admin.waitForTimeout(300);
+  await admin.getByRole('textbox',{name:'Password',exact:true}).fill('Cricket123!');
+  await expect(admin.getByRole('textbox',{name:'Password',exact:true})).toHaveValue('Cricket123!');
+  await admin.keyboard.press('Tab');
+  await admin.getByRole('button',{name:'Login',exact:true}).click();
+  await expect(admin.getByText('Every ball. Every run.',{exact:true})).toBeVisible({timeout:30000});
+  await admin.goto(`${base}/#/admin/scoring/ground-live`);
+  await admin.waitForSelector('flutter-view');
+  if(await admin.locator('flt-semantics-placeholder').count()) await admin.locator('flt-semantics-placeholder').evaluate(el=>el.click());
+  await expect(admin.getByRole('button',{name:'1',exact:true})).toBeEnabled({timeout:30000});
+  await admin.getByRole('button',{name:'1',exact:true}).click();
+  await expect(guest.getByText(`${initialRuns+1}/${initialWickets}`,{exact:true})).toBeVisible({timeout:15000});
+  await admin.getByRole('button',{name:'Undo last ball',exact:true}).click();
+  await admin.getByRole('button',{name:'Confirm',exact:true}).click();
+  await expect(guest.getByText(initialScore,{exact:true})).toBeVisible({timeout:15000});
+  await admin.screenshot({path:'.tools/screenshots/scoring-mobile.png'});
+  await guest.screenshot({path:'.tools/screenshots/match-mobile.png'});
+  await guest.goto(`${base}/#/admin/users`);
+  await guest.waitForSelector('flutter-view');
+  if(await guest.locator('flt-semantics-placeholder').count()) await guest.locator('flt-semantics-placeholder').evaluate(el=>el.click());
+  await expect(guest.getByText('Every ball. Every run.',{exact:true})).toBeVisible({timeout:30000});
+  await guest.screenshot({path:'.tools/screenshots/home-mobile.png'});
+  await guest.setViewportSize({width:320,height:740});
+  await guest.emulateMedia({colorScheme:'dark'});
+  await guest.waitForTimeout(500);
+  await guest.screenshot({path:'.tools/screenshots/home-dark-small.png'});
+  expect(errors).toEqual([]);
+  console.log('PASS: admin scoring updates a separate guest session live, undo restores both screens, and guest admin access is blocked.');
+} finally {await browser.close();}
