@@ -134,7 +134,7 @@ class _OpeningSheetState extends State<OpeningSheet> {
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 12),
                   child: Text(
-                    'Add at least two batters and one opposing bowler in Manage Teams and Players.',
+                    'Add at least two batters and one opposing bowler: open Teams, pick the team and tap Add player.',
                   ),
                 ),
               const SizedBox(height: 16),

@@ -89,12 +89,8 @@ void main() {
       final router = container.read(appRouterProvider);
       router.go('/teams/own');
       await tester.pumpAndSettle();
-      expect(find.text('Manage squad'), findsOneWidget);
-      await tester.tap(find.text('Manage squad'));
-      await tester.pumpAndSettle();
-      expect(find.text('Manage squad'), findsOneWidget);
-      expect(find.byTooltip('Delete'), findsOneWidget);
-      await tester.tap(find.byType(FloatingActionButton));
+      expect(find.text('Manage squad'), findsNothing);
+      await tester.tap(find.text('Add player'));
       await tester.pumpAndSettle();
       expect(find.text('Create player'), findsOneWidget);
       await tester.enterText(find.byType(TextFormField).first, 'New teammate');
@@ -109,6 +105,7 @@ void main() {
       await tester.tap(find.text('Existing player'));
       await tester.pumpAndSettle();
       expect(find.text('Edit player'), findsOneWidget);
+      expect(find.text('Remove from squad'), findsOneWidget);
       await tester.enterText(
         find.byType(TextFormField).first,
         'Updated teammate',
@@ -136,22 +133,12 @@ void main() {
     final router = container.read(appRouterProvider);
     router.go('/teams/other');
     await tester.pumpAndSettle();
-    expect(find.text('Manage squad'), findsOneWidget);
-    for (final path in [
-      '/teams/other/squad',
-      '/teams/other/squad/new',
-      '/teams/other/squad/p1',
-    ]) {
+    expect(find.text('Add player'), findsOneWidget);
+    for (final path in ['/teams/other/squad/new', '/teams/other/squad/p1']) {
       router.go(path);
       await tester.pumpAndSettle();
       expect(find.textContaining('Only this team'), findsNothing);
-      if (path.endsWith('/squad')) {
-        expect(find.text('Manage squad'), findsOneWidget);
-        expect(find.byType(FloatingActionButton), findsOneWidget);
-        expect(find.byTooltip('Delete'), findsOneWidget);
-      } else {
-        expect(find.text('Save player'), findsOneWidget);
-      }
+      expect(find.text('Save player'), findsOneWidget);
     }
   });
   testWidgets('guest squad management links redirect to login', (tester) async {

@@ -10,9 +10,7 @@ import '../../features/teams/presentation/teams_screen.dart';
 import '../../features/teams/presentation/team_detail_screen.dart';
 import '../../features/tournaments/presentation/tournaments_screen.dart';
 import '../../features/tournaments/presentation/tournament_detail_screen.dart';
-import '../../features/standings/presentation/standings_screen.dart';
 import '../widgets/app_scaffold.dart';
-import '../../features/admin/presentation/admin_list_screen.dart';
 import '../../features/admin/presentation/entity_form_screen.dart';
 import '../../features/admin/presentation/manage_users_screen.dart';
 import '../../features/scoring/presentation/scoring_screen.dart';
@@ -22,7 +20,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   final router = GoRouter(
     redirect: (context, state) {
       if ((state.uri.path.startsWith('/create/') ||
-              state.uri.path.contains('/squad')) &&
+              state.uri.path.contains('/squad/')) &&
           !ref.read(isSignedInProvider)) {
         return '/login';
       }
@@ -33,20 +31,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
-      GoRoute(
-        path: '/teams/:teamId/squad',
-        builder: (_, s) {
-          final id = s.pathParameters['teamId']!;
-          return SquadAccess(
-            teamId: id,
-            child: AdminListScreen(
-              kind: 'players',
-              teamId: id,
-              basePath: '/teams/$id/squad',
-            ),
-          );
-        },
-      ),
       GoRoute(
         path: '/teams/:teamId/squad/:id',
         builder: (_, s) => SquadAccess(
@@ -67,7 +51,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             tournamentId: s.uri.queryParameters['tournamentId'],
           ),
         ),
-      GoRoute(path: '/admin/scoring', builder: (_, _) => const ScoringScreen()),
       GoRoute(
         path: '/admin/scoring/:id',
         builder: (_, s) => ScoringScreen(id: s.pathParameters['id']!),
@@ -76,32 +59,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/admin/users',
         builder: (_, _) => const ManageUsersScreen(),
       ),
-      GoRoute(
-        path: '/admin/teams/:teamId/players',
-        builder: (_, s) => AdminListScreen(
-          kind: 'players',
-          teamId: s.pathParameters['teamId']!,
-        ),
-      ),
-      GoRoute(
-        path: '/admin/teams/:teamId/players/:id',
-        builder: (_, s) => EntityFormScreen(
-          kind: 'players',
-          id: s.pathParameters['id']!,
-          teamId: s.pathParameters['teamId']!,
-        ),
-      ),
-      for (final kind in ['tournaments', 'teams', 'matches']) ...[
-        GoRoute(
-          path: '/admin/$kind',
-          builder: (_, _) => AdminListScreen(kind: kind),
-        ),
+      for (final kind in ['tournaments', 'teams', 'matches'])
         GoRoute(
           path: '/admin/$kind/:id',
           builder: (_, s) =>
               EntityFormScreen(kind: kind, id: s.pathParameters['id']!),
         ),
-      ],
       GoRoute(path: '/', builder: (_, _) => const HomeScreen()),
       GoRoute(path: '/login', builder: (_, _) => const LoginScreen()),
       GoRoute(
@@ -128,7 +91,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/tournaments/:id',
         builder: (_, s) => TournamentDetailScreen(id: s.pathParameters['id']!),
       ),
-      GoRoute(path: '/standings', builder: (_, _) => const StandingsScreen()),
       GoRoute(
         path: '/about',
         builder: (_, _) => const AppScaffold(
