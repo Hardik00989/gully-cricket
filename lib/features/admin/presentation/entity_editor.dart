@@ -59,7 +59,10 @@ class _EntityEditorState extends ConsumerState<EntityEditor> {
     }
     values.putIfAbsent('logoUrl', () => '');
     values.putIfAbsent('shortName', () => '');
-    values.putIfAbsent('overs', () => 20);
+    final tournament = widget.tournaments
+        .where((t) => t.id == values['tournamentId'])
+        .firstOrNull;
+    values.putIfAbsent('overs', () => tournament?.format == 'T10' ? 10 : 20);
     values.putIfAbsent('jerseyNo', () => 1);
     values.putIfAbsent('format', () => 'T20');
     values.putIfAbsent('status', () => 'upcoming');
@@ -117,10 +120,45 @@ class _EntityEditorState extends ConsumerState<EntityEditor> {
                     : 'Save ${widget.kind == 'matches' ? 'match' : widget.kind.substring(0, widget.kind.length - 1)}',
               ),
             ),
+            if (widget.kind == 'players' &&
+                widget.id != 'new' &&
+                ref.watch(managementAccessProvider))
+              TextButton.icon(
+                onPressed: action.isLoading ? null : _removePlayer,
+                icon: const Icon(Icons.person_remove_outlined),
+                label: const Text('Remove from squad'),
+              ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _removePlayer() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Remove ${values['name']}?'),
+        content: const Text('This player will be removed from the squad.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final ok = await ref
+        .read(adminControllerProvider.notifier)
+        .delete('players', widget.id, teamId: widget.teamId);
+    if (ok && mounted) {
+      context.canPop() ? context.pop() : context.go('/teams/${widget.teamId}');
+    }
   }
 
   Future<void> _save() async {
@@ -160,7 +198,7 @@ class _EntityEditorState extends ConsumerState<EntityEditor> {
       } else {
         context.go(
           widget.kind == 'players'
-              ? '/teams/${widget.teamId}/squad'
+              ? '/teams/${widget.teamId}'
               : '/${widget.kind}',
         );
       }

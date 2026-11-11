@@ -17,7 +17,7 @@ class HomeActions extends StatelessWidget {
             label: const Text('New tournament'),
           ),
           OutlinedButton.icon(
-            onPressed: () => context.push('/admin/scoring'),
+            onPressed: () => context.go('/matches'),
             icon: const Icon(Icons.sports_cricket),
             label: const Text('Score a match'),
           ),
@@ -42,8 +42,8 @@ class HomeActions extends StatelessWidget {
       ),
       (
         'Start scoring',
-        'Select a match and record each ball.',
-        '/admin/scoring',
+        'Open a match and tap Start scoring.',
+        '/matches?tab=1',
       ),
     ];
     return Card(

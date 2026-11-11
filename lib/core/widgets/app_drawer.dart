@@ -54,12 +54,6 @@ class AppDrawer extends ConsumerWidget {
                 ],
               ),
             ),
-            entry('Home', '/', Icons.home_outlined),
-            entry('Matches', '/matches', Icons.scoreboard_outlined),
-            entry('Tournaments', '/tournaments', Icons.emoji_events_outlined),
-            entry('Teams', '/teams', Icons.groups_outlined),
-            entry('Points table', '/standings', Icons.table_chart_outlined),
-            const Divider(),
             if (ref.watch(managementAccessProvider))
               entry(
                 'Manage Users',

@@ -1,52 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../core/widgets/app_scaffold.dart';
 import '../../../core/widgets/async_panel.dart';
 import '../../matches/providers/match_providers.dart';
 import '../../teams/providers/team_providers.dart';
 import '../../tournaments/providers/tournament_providers.dart';
 import '../providers/standings_providers.dart';
 
-class StandingsScreen extends ConsumerStatefulWidget {
-  const StandingsScreen({super.key, this.tournamentId});
-  final String? tournamentId;
+class StandingsScreen extends ConsumerWidget {
+  const StandingsScreen({super.key, required this.tournamentId});
+  final String tournamentId;
   @override
-  ConsumerState<StandingsScreen> createState() => _StandingsScreenState();
-}
-
-class _StandingsScreenState extends ConsumerState<StandingsScreen> {
-  String? selected;
-  @override
-  Widget build(BuildContext context) {
-    final body = AsyncPanel(
+  Widget build(BuildContext context, WidgetRef ref) {
+    final id = tournamentId;
+    return AsyncPanel(
       value: ref.watch(tournamentsProvider),
       retry: () => ref.invalidate(tournamentsProvider),
       data: (tournaments) {
-        if (tournaments.isEmpty) {
-          return const Center(child: Text('No tournaments yet.'));
-        }
-        final id =
-            widget.tournamentId ??
-            (tournaments.any((t) => t.id == selected)
-                ? selected
-                : tournaments.first.id)!;
         return Column(
           children: [
-            if (widget.tournamentId == null)
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: DropdownButtonFormField<String>(
-                  initialValue: id,
-                  decoration: const InputDecoration(labelText: 'Tournament'),
-                  items: tournaments
-                      .map(
-                        (t) =>
-                            DropdownMenuItem(value: t.id, child: Text(t.name)),
-                      )
-                      .toList(),
-                  onChanged: (value) => setState(() => selected = value),
-                ),
-              ),
             Expanded(
               child: AsyncPanel(
                 value: ref.watch(teamsProvider),
@@ -114,8 +85,5 @@ class _StandingsScreenState extends ConsumerState<StandingsScreen> {
         );
       },
     );
-    return widget.tournamentId == null
-        ? AppScaffold(title: 'Points Table', body: body)
-        : body;
   }
 }

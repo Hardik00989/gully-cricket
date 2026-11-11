@@ -21,7 +21,7 @@ class TeamSelection extends StatelessWidget {
       ),
       if (teams.isEmpty)
         const Text(
-          'Create teams from the drawer, or add them after creating the tournament.',
+          'No teams yet. Save the tournament, then use Add team on its page.',
         ),
       Wrap(
         spacing: 8,

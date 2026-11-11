@@ -43,22 +43,14 @@ class TeamDetailScreen extends ConsumerWidget {
                           ),
                           const SizedBox(height: 8),
                           if (manage)
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: [
-                                FilledButton.icon(
-                                  onPressed: () =>
-                                      context.push('/teams/$id/squad/new'),
-                                  icon: const Icon(Icons.person_add_outlined),
-                                  label: const Text('Add player'),
-                                ),
-                                TextButton(
-                                  onPressed: () =>
-                                      context.push('/teams/$id/squad'),
-                                  child: const Text('Manage squad'),
-                                ),
-                              ],
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: FilledButton.icon(
+                                onPressed: () =>
+                                    context.push('/teams/$id/squad/new'),
+                                icon: const Icon(Icons.person_add_outlined),
+                                label: const Text('Add player'),
+                              ),
                             ),
                         ],
                       ),
